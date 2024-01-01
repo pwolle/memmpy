@@ -29,7 +29,7 @@ def string_pad_64bit(integer) -> str:
 
 @typeguard.typechecked
 def get_metadata_path(path: str) -> str:
-    return os.path.join(path, "metadata_memio.json")
+    return os.path.join(path, "metadata_memmpy.json")
 
 
 @typeguard.typechecked
