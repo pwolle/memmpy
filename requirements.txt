@@ -1,0 +1,3 @@
+typeguard
+tqdm
+numpy
