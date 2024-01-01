@@ -1,12 +1,10 @@
+from typing import Any, Callable, Self, overload
+
 import numpy as np
-
 import typeguard
-
 from numpy.typing import DTypeLike
-from typing import Self, Callable, Any, overload
 
-from . import _vector
-from . import _labels
+from . import _labels, _vector
 
 
 @typeguard.typechecked

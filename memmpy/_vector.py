@@ -1,13 +1,11 @@
-import numpy as np
-
-import tempfile
 import math
 import os
-
-import typeguard
-
-from numpy.typing import DTypeLike
+import tempfile
 from typing import Self
+
+import numpy as np
+import typeguard
+from numpy.typing import DTypeLike
 
 from . import _labels
 

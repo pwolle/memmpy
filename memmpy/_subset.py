@@ -1,13 +1,12 @@
-import hashlib
-import tqdm
 import ast
-import typeguard
-
+import hashlib
 from typing import Any
 
-from . import _loader
-from . import _vector
-from . import _labels
+import numpy as np
+import tqdm
+import typeguard
+
+from . import _labels, _loader, _vector
 
 
 @typeguard.typechecked
@@ -32,7 +31,7 @@ def compute_cut_batched(
     write_type=_vector.WriteVector,
     constants: dict[str, Any] | None = None,
     recreate: bool = False,
-) -> None:
+) -> np.memmap:
     constants = constants or {}
 
     keys = get_symbols(expression)
@@ -50,7 +49,7 @@ def compute_cut_batched(
         if expression in meta["arrays"]:
             if meta["arrays"][expression]["check"] == hashed:
                 print(f"Using cached cut: {expression}.")
-                return
+                return _vector.read_vector(path, expression)
 
     print(f"Computing cut: {expression}.")
     with write_type(path=path, name=expression, check=hashed) as writer:
@@ -63,3 +62,5 @@ def compute_cut_batched(
             result = eval(expression, batch | constants, {})
             index = batch["_index"][result]
             writer.extend(index)
+
+    return _vector.read_vector(path, expression)

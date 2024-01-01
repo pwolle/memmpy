@@ -16,7 +16,6 @@ import typeguard
 
 from . import _labels, _loader, _subset, _vector
 
-
 __all__ = [
     "RFileConfig",
     "load_root",

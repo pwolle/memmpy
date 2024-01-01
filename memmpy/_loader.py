@@ -1,13 +1,10 @@
-import numpy as np
-
-import typeguard
 import math
+from typing import Any, Callable, Generator, Self
 
-from typing import Self, Generator, Callable, Any
+import numpy as np
+import typeguard
 
-from . import _labels
-from . import _vector
-from . import _jagged
+from . import _jagged, _labels, _vector
 
 
 @typeguard.typechecked

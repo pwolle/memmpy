@@ -1,8 +1,7 @@
-from ._vector import WriteVector, read_vector
-from ._jagged import WriteJagged, ReadJagged, WriteShaped, ReadShaped
+from ._jagged import ReadJagged, ReadShaped, WriteJagged, WriteShaped
 from ._loader import SimpleLoader, SplitLoader, load_memmaps
 from ._subset import compute_cut_batched
-
+from ._vector import WriteVector, read_vector
 
 __all__ = [
     "WriteVector",
