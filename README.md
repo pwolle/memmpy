@@ -2,8 +2,8 @@
 Memmpy is a Python library for storing datasets in, and loading datasets from, [memory mapped](https://en.wikipedia.org/wiki/Memory-mapped_file) files. This is particularly useful for large datasets that do not fit in memory and therefore need to be processed in batches. Memmpy is based on the [`numpy.memmap`](https://numpy.org/doc/stable/reference/generated/numpy.memmap.html) implementation.
 
 ## Who should use Memmpy?
-Memmpy is primarily intended for use in medium to large scale machine learning applications in high energy particle physics.
-Where the whole dataset would not fit into memory at once and iterating over the ROOT files is too slow. This could be because shuffling of datapoints is desired, or because only a fraction of the information or events is needed for training.
+Memmpy is primarily intended for use in medium to large scale machine learning applications in high energy particle physics, where the whole dataset would not fit into memory at once and iterating over the ROOT files is too slow. This could be because shuffling of datapoints is desired, or because only a fraction of the information or events is needed for training. 
+
 Memmpy is not intended for use in small applications where the entire dataset fits into memory and can be loaded at once. It is also not intended for use in very large applications where training is massively distributed.
 
 ## Installation
