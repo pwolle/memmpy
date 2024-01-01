@@ -7,7 +7,7 @@ Memmpy is primarily intended for use in medium to large scale machine learning a
 Memmpy is not intended for use in small applications where the entire dataset fits into memory and can be loaded at once. It is also not intended for use in very large applications where training is massively distributed.
 
 ## Installation
-Memmpy can be installed directly from PyPI using `pip`. Memmpy requires Python 3.10 or higher.
+Memmpy can be installed directly from PyPI using `pip`. It requires Python 3.10 or higher.
 If you want to process `.root` files, `uproot` is required. This can also be installed using `pip`.
 ```bash
 pip install memmpy
