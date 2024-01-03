@@ -18,6 +18,7 @@ from . import _labels, _loader, _subset, _vector
 
 __all__ = [
     "RFileConfig",
+    "memmap_vectors_root",
     "load_root",
 ]
 

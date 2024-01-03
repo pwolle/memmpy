@@ -12,14 +12,93 @@ from . import _labels
 
 @typeguard.typechecked
 class WriteVector:
+    """
+    Write numpy arrays into a memory mapped file. The vector increases in size
+    as needed. The shape and dtypes are fixed on the first call to `append` or
+    `extend`.
+    `WriteVector` must be used as context manager, so that the file is flushed
+    and closed properly. The data can be accessed via `read_vector`.
+
+    Attributes
+    ---
+    path: str
+        Path to the directory where the memory mapped file is stored.
+
+    name: str
+        Name of the data. This is used as key to retrieve the data via
+        `read_vector`.
+
+    shape: tuple[int, ...] | None
+        Shape of the data. `None` if the shape is not yet fixed.
+
+    dtype: DTypeLike | None
+        Dtype of the data. `None` if the dtype is not yet fixed.
+
+    check: str | None
+        Checksum of the data. `None` if a timestamp at the time of saving will
+        be used as checksum.
+
+    enter: bool
+        Whether the context manager was entered.
+
+    fixed: bool
+        Whether the shape and dtype are fixed.
+    """
+
+    path: str
+    name: str
+    shape: tuple[int, ...] | None
+    dtype: DTypeLike | None
+    check: str | None
+    enter: bool
+    fixed: bool
+
     def __init__(
-        self,
+        self: Self,
         path: str,
         name: str,
         shape: tuple[int, ...] | None = None,
         dtype: DTypeLike | None = None,
         check: str | None = None,
     ) -> None:
+        """
+        Initializes the context manager for writing a memory mapped vector.
+
+        Parameters
+        ---
+        path: str
+            Path to the directory where the memory mapped file is stored.
+
+        name: str
+            Name of the data. This is used as key to retrieve the data via
+            `read_vector`.
+
+        shape: tuple[int, ...] | None, optional, default: None
+            Shape of the data. If not given, the shape is inferred from the
+            first call to `append` or `extend`.
+
+        dtype: DTypeLike | None, optional, default: None
+            Dtype of the data. If not given, the dtype is inferred from the
+            first call to `append` or `extend`.
+
+        check: str | None, optional, default: None
+            Checksum of the data. If not given a timestamp at the time of
+            saving is used as checksum. Usually this would be a hash of the
+            source files, such that the data can be recreated if the source
+            files change.
+
+        Raises
+        ---
+        ValueError
+            If the shape is not positive.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
+
+        if shape is not None and any(s <= 0 for s in shape):
+            raise ValueError("Shape must be positive.")
+
         self.path = path
         self.name = name
         self.shape = shape
@@ -28,7 +107,11 @@ class WriteVector:
         self.enter = False
         self.fixed = False
 
-    def fix_shape_and_dtype(self, shape: tuple[int, ...], dtype: DTypeLike):
+    def _fix_shape_and_dtype(
+        self: Self,
+        shape: tuple[int, ...],
+        dtype: DTypeLike,
+    ) -> None:
         if self.fixed:
             return
 
@@ -50,8 +133,26 @@ class WriteVector:
         self.enter = True
         return self
 
-    def extend(self: Self, value: np.ndarray) -> Self:
-        self.fix_shape_and_dtype(value.shape[1:], value.dtype)
+    def extend(self: Self, value: np.ndarray) -> None:
+        """
+        Extend the memory mapped vector by `value`. The first axis of `value`
+        is treated as the number of elements to append. All other axes must
+        match the shape of the vector. The dtypes must also match.
+
+        Parameters
+        ---
+        value: np.ndarray
+            Array to append to the vector.
+
+        Raises
+        ---
+        ValueError
+            If the dtypes or shapes do not match.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
+        self._fix_shape_and_dtype(value.shape[1:], value.dtype)
         assert self.enter, "WriteVector should be used as context manager."
 
         if value.dtype != self._mmap.dtype:
@@ -80,10 +181,26 @@ class WriteVector:
         self._mmap.flush()
 
         self._index += value.shape[0]
-        return self
 
-    def append(self: Self, value: np.ndarray) -> Self:
-        return self.extend(value[None])
+    def append(self: Self, value: np.ndarray) -> None:
+        """
+        Append `value` to the memory mapped vector. The shape of `value` must
+        match all but the first axis of the vector. The dtypes must also match.
+
+        Parameters
+        ---
+        value: np.ndarray
+            Array to append to the vector.
+
+        Raises
+        ---
+        ValueError
+            If the dtypes or shapes do not match.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
+        self.extend(value[None])
 
     def __exit__(self: Self, exc_type, *_) -> None:
         if exc_type is not None:
@@ -112,12 +229,58 @@ class WriteVector:
 
 @typeguard.typechecked
 class WriteVectorDict:
-    def __init__(self: Self, path: str, check=None):
+    """
+    Write a dictionary of numpy arrays into memory mapped files. Works similar
+    to `WriteVector`, but the arrays also have keys, similar to python dicts.
+    Furthermore the number of appended elements must be the same for all keys.
+
+    Attributes
+    ---
+    path: str
+        Path to the directory where the memory mapped file is stored.
+
+    check: str | None
+        Checksum of the data. `None` if a timestamp at the time of saving will
+        be used as checksum.
+
+    fixed: bool
+        Whether the keys are fixed.
+
+    enter: bool
+        Whether the context manager was entered.
+    """
+
+    path: str
+    check: str | None
+    fixed: bool
+    enter: bool
+    vectors: dict[str, WriteVector]
+
+    def __init__(self: Self, path: str, check=None) -> None:
+        """
+        Initializes the context manager for writing a dictionary of memory
+        mapped vectors.
+
+        Parameters
+        ---
+        path: str
+            Path to the directory where the memory mapped file is stored.
+
+        check: str | None, optional, default: None
+            Checksum of the data. If not given a timestamp at the time of
+            saving is used as checksum. Usually this would be a hash of the
+            source files, such that the data can be recreated if the source
+            files change.
+            The `check` will be passed on to the attribute `vectors`.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
         self.path = path
         self.check = check
         self.fixed = False
 
-    def fix_keys(self, keys):
+    def _fix_keys(self, keys):
         if self.fixed:
             return
 
@@ -133,11 +296,47 @@ class WriteVectorDict:
         return self
 
     def expand(self: Self, data: dict[str, np.ndarray]) -> Self:
-        if not self.fixed:
-            self.fix_keys(data.keys())
+        """
+        Append the data to the memory mapped vectors. The keys, dtypes and all
+        but the first axes of the arrays must be the same on all calls to
+        `expand`. The first call fixes the keys dtypes and shapes.
 
-        assert set(data.keys()) == set(self.vectors.keys())
-        assert len(set(v.shape[0] for v in data.values())) == 1
+        Parameters
+        ---
+        data: dict[str, np.ndarray]
+            Data to append to the vectors.
+
+        Raises
+        ---
+        ValueError
+            If the keys, dtypes or shapes do not match to the previous calls to
+            `expand`.
+
+        ValueError
+            If the length of the first axis of the data is not the same for all
+            keys.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
+        if not self.fixed:
+            self._fix_keys(data.keys())
+
+        if set(data.keys()) != set(self.vectors.keys()):
+            error = (
+                "The keys of the data must match the keys of the vectors. "
+                f"Got keys {set(data.keys())}, which do not match the fixed "
+                f"keys {set(self.vectors.keys())}."
+            )
+            raise ValueError(error)
+
+        lengths = {k: v.shape[0] for k, v in data.items()}
+        if len(set(lengths.values())) != 1:
+            error = (
+                "The length of the first axis of the data must be the same for"
+                f" all keys. Got different lengths {lengths}."
+            )
+            raise ValueError(error)
 
         for key, value in data.items():
             self.vectors[key].extend(value)
@@ -151,5 +350,40 @@ class WriteVectorDict:
 
 @typeguard.typechecked
 def read_vector(path: str, name: str) -> np.memmap:
+    """
+    Read a memory mapped vector from a memmpy directory.
+
+    Parameters
+    ---
+    path: str
+        Path to the directory where the memory mapped file is stored.
+
+    name: str
+        Name of the data. This name was used when writing the data via
+        `WriteVector`.
+
+    Returns
+    ---
+    mmap: np.memmap
+        Memory mapped array. The dtype and shape are read from the metadata,
+        which was written when the data was saved. The array is read only.
+
+    Raises
+    ---
+    KeyError
+        If the name is not found in the metadata.
+
+    TypeError
+        If any arguments python type does not match the type hints.
+    """
     mmap_path, dtype, shape = _labels.read_array_metadata(path, name)
+    mmap_path = os.path.abspath(mmap_path)
+
+    if not os.path.exists(mmap_path):
+        error = (
+            f"The file for '{name}' at '{path}' was not found, perhaps it was "
+            f"there was an error when saving. The full path is {mmap_path}."
+        )
+        raise FileNotFoundError(error)
+
     return np.memmap(mmap_path, dtype, "r", shape=shape)

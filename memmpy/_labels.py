@@ -103,7 +103,7 @@ def read_array_metadata(
 
     if name not in meta["arrays"]:
         error = f"Array '{name}' not found in '{path}'."
-        raise ValueError(error)
+        raise KeyError(error)
 
     apath = get_array_path(path, name)
     dtype = np.dtype(meta["arrays"][name]["dtype"])
