@@ -28,31 +28,63 @@ def compute_cut_batched(
     expression: str,
     *,
     batch_size: int = 1024 * 128,
-    write_type=_vector.WriteVector,
     constants: dict[str, Any] | None = None,
     recreate: bool = False,
 ) -> np.memmap:
+    """
+    Computes indicies for which the given expression is true. The result is
+    stored in a memmap file.
+
+    Parameters
+    ---
+    path: str
+        Path to the memmap file.
+
+    expression: str
+        Expression to evaluate. Can be any valid Python expression that returns
+        a boolean value.
+
+    batch_size: int, optional, default: 1024 * 128
+        Number of events to process at once.
+
+    write_type: type, optional, default: WriteVector
+        Type of the memmap file to write to.
+
+    constants: dict[str, Any], optional, default: None
+        Constant values to use in the expression.
+
+    recreate: bool, optional, default: False
+        If True, the cut is recomputed even if it already exists.
+
+    Returns
+    ---
+    np.memmap
+        Array of indicies for which the expression is true.
+    """
     constants = constants or {}
 
     keys = _get_symbols(expression)
     keys = keys - set(constants.keys())
 
+    meta = _labels.safe_load(path)
+
     hasher = hashlib.sha256()
     for key in sorted(keys):
-        hasher.update(key.encode())
+        if key in meta["arrays"]:
+            hasher.update(meta["arrays"][key]["check"].encode())
+        else:
+            raise KeyError(f"Key {key} not found in memmap file.")
 
     hashed = hasher.hexdigest()
 
     if not recreate:
-        meta = _labels.safe_load(path)
-
         if expression in meta["arrays"]:
             if meta["arrays"][expression]["check"] == hashed:
                 print(f"Using cached cut: {expression}.")
                 return _vector.read_vector(path, expression)
 
     print(f"Computing cut: {expression}.")
-    with write_type(path=path, name=expression, check=hashed) as writer:
+    with _vector.WriteVector(path=path, name=expression, check=hashed) as writer:
         batch_loader = _loader.SimpleLoader(
             _loader.load_memmaps(path, keys),
             batch_size,

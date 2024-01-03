@@ -1,6 +1,6 @@
 import math
 import os
-from typing import Any, Callable, Generator, Hashable, Self
+from typing import Any, Callable, Generator, Hashable, Self, TypeAlias
 
 import numpy as np
 import typeguard
@@ -8,11 +8,16 @@ import typeguard
 from . import _jagged, _labels, _vector
 
 
+data_indexable: TypeAlias = (
+    np.ndarray | np.memmap | _jagged.ReadJagged | _jagged.ReadShaped
+)
+
+
 @typeguard.typechecked
 def load_memmaps(
     path: str,
     keys: set[str] | None = None,
-) -> dict[str, np.memmap | _jagged.ReadJagged | _jagged.ReadShaped]:
+) -> dict[Hashable, data_indexable]:
     """
     Load memmaps from a memmpy directory.
 
@@ -26,7 +31,7 @@ def load_memmaps(
 
     Returns
     ---
-    dict[str, np.memmap | _jagged.ReadJagged | _jagged.ReadShaped]
+    dict[Hashable, data_indexable]
         The loaded data. Has the same keys as requested.
 
     Raises
@@ -160,12 +165,12 @@ class SimpleLoader:
         The batch size.
     """
 
-    data: dict[Hashable, np.ndarray | np.memmap]
+    data: dict[Hashable, data_indexable]
     batch_size: int
 
     def __init__(
         self: Self,
-        data: dict[Hashable, np.ndarray | np.memmap],
+        data: dict[Hashable, data_indexable],
         batch_size: int = 32,
     ) -> None:
         """
@@ -174,7 +179,7 @@ class SimpleLoader:
 
         Parameters
         ---
-        data : dict[Hashable, np.ndarray | np.memmap]
+        data : dict[Hashable, data_indexable]
             The data to iterate over.
 
         batch_size : int, optional, default: 32
@@ -216,16 +221,14 @@ class SimpleLoader:
 
         self.batch_size = batch_size
 
-    def __iter__(
-        self: Self,
-    ) -> Generator[dict[Hashable, np.ndarray | np.memmap], None, None]:
+    def __iter__(self: Self) -> Generator[dict, None, None]:
         """
         Iterate over the data in batches. The last batch may be smaller than
         the batch size.
 
         Yields
         ---
-        dict[Hashable, np.ndarray | np.memmap]
+        dict
             The next batch. The keys are the same as the data given to the
             constructor. A new key '_index' is added which contains the
             indicies of the batch.
@@ -270,14 +273,14 @@ class SimpleLoader:
 
 
 class FixedSeed:
-    def __init__(self, seed: int):
+    def __init__(self, seed: int) -> None:
         self.seed = seed
 
-    def __enter__(self):
+    def __enter__(self: Self) -> None:
         self.state = np.random.get_state()
         np.random.seed(self.seed)
 
-    def __exit__(self, *_):
+    def __exit__(self: Self, *_) -> None:
         np.random.set_state(self.state)
 
 
@@ -291,7 +294,7 @@ class SplitLoader:
 
     Attributes
     ---
-    data : dict[Hashable, np.ndarray | np.memmap]
+    data : dict[Hashable, data_indexable]
         The data to iterate over.
 
     batch_size : int
@@ -324,7 +327,7 @@ class SplitLoader:
         The start index of the split in the split permutation
     """
 
-    data: dict[Hashable, np.ndarray | np.memmap]
+    data: dict[Hashable, data_indexable]
     batch_size: int
     split: int
     fractions: tuple[float, ...]
@@ -339,7 +342,7 @@ class SplitLoader:
 
     def __init__(
         self: Self,
-        data: dict[Hashable, np.ndarray | np.memmap],
+        data: dict[Hashable, data_indexable],
         batch_size: int = 32,
         *,
         split: int = 0,
@@ -355,7 +358,7 @@ class SplitLoader:
 
         Parameters
         ---
-        data : dict[Hashable, np.ndarray | np.memmap]
+        data : dict[Hashable, data_indexable]
             The data to iterate over.
 
         batch_size : int, optional, default: 32
@@ -396,18 +399,13 @@ class SplitLoader:
         self.data = data
         self.data_len: int = _safe_take_set(len(v) for v in self.data.values())
 
-        if batch_size > self.data_len:
+        if batch_size > self.data_len and subindex is None:
             factor = math.ceil(batch_size / self.data_len)
-            for k, v in self.data.items():
-                self.data[k] = np.tile(v, factor)
+            subindex = np.arange(self.data_len, dtype=np.int64)
 
-            self.data_len *= factor
-
-            # this is not optimal for memeory usage but the simplest
-            # implementation, it would be better to not tile the data
-            # if the subindes is used anyway
-            if subindex is not None:
-                subindex = np.tile(subindex, factor)
+        if subindex is not None and batch_size > len(subindex):
+            factor = math.ceil(batch_size / len(subindex))
+            subindex = np.tile(subindex, factor)
 
         self.batch_size = batch_size
         self.split = split
@@ -426,16 +424,14 @@ class SplitLoader:
             sum(self.data_len * f for f in fractions[:split]),
         )
 
-    def __iter__(
-        self: Self,
-    ) -> Generator[dict[Hashable, np.ndarray | np.memmap], None, None]:
+    def __iter__(self: Self) -> Generator[dict, None, None]:
         """
         Iterate over the data in batches. If the last batch would be smaller
         than the batch size, it is dropped.
 
         Yields
         ---
-        dict[Hashable, np.ndarray | np.memmap]
+        dict
             The next batch. The keys are the same as the data given to the
             constructor. A new key '_index' is added which contains the
             indicies of the batch.
