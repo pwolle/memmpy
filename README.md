@@ -77,7 +77,7 @@ loader = load_root(
     # variable length arrays can be padded to the same length with a given value
     keys_padded={"jet_pt": (22, float("nan"))}, 
     batch_size=128,
-    tcut="nJets >= 6 & nBTags_77 >= 2",
+    tcut="(nJets >= 6) & (nBTags_77 >= 2)",
 )
 ```
 All results are cached, so the next time the function is called, the dataset is loaded from the cache instead of the ROOT files. The metadata is stored in hashed form, so it is also possible to apply cuts to the metadata.
