@@ -25,12 +25,29 @@ __all__ = [
 
 @dataclasses.dataclass(frozen=True)
 class RFileConfig:
+    """
+    Stores the configuration for a single ROOT file.
+
+    Parameters
+    ---
+    path: str
+        Path to the ROOT file.
+
+    tree: str, optional, default: "nominal_Loose"
+        Name of the tree to read from.
+
+    metadata: dict[str, str], optional, default: {}
+        Metadata to store in the memmap file. This can be used to store
+        information about the what is stored in the file, i.e. from which
+        process the data originates, or which run it is from.
+    """
+
     path: str
     tree: str = dataclasses.field(default="nominal_Loose")
     metadata: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
-def encode_metadata(
+def _encode_metadata(
     metadata: dict[str, str],
     size: int,
 ) -> dict[str, np.ndarray]:
@@ -56,6 +73,40 @@ def memmap_vectors_root(
     aliases: dict[str, str] | None = None,
     recreate: bool = False,
 ) -> None:
+    """
+    Store the data from the given ROOT files in a memmap files.
+
+    Parameters
+    ---
+    root_files: list[RFileConfig]
+        List of ROOT file configurations to read from, i.e. the path to the file,
+        the name of the tree to read from, and metadata to store in memmaps.
+
+    path_mmap: str
+        Path to the memmap directory.
+
+    keys: set[str]
+        Set of keys to read from the ROOT files. The keys must be scalar valued.
+
+    keys_padded: dict[str, tuple[int, Any]], optional, default: None
+        Dictionary of 1d vector valued keys to read from the ROOT files. The
+        dictionary maps the key to a tuple of the size of the vector and the
+        value to pad with.
+
+    aliases: dict[str, str], optional, default: None
+        Dictionary of aliases to use for the keys.
+
+    recreate: bool, optional, default: False
+        If True, the memmap files are recreated even if they already exist.
+
+    Raises
+    ---
+    FileNotFoundError
+        If a ROOT file is not found.
+
+    TypeError
+        If the arguments do not match the type hints.
+    """
     keys_padded = keys_padded or {}
     aliases = aliases or {}
     keys = keys | set(keys_padded.keys())
@@ -95,6 +146,9 @@ def memmap_vectors_root(
         for rfile in tqdm.tqdm(root_files):
             tqdm.tqdm.write(f"processing '{rfile.path}'")
 
+            if not os.path.exists(rfile.path):
+                raise FileNotFoundError(f"File '{rfile.path}' not found.")
+
             with uproot.open(rfile.path) as file:  # type: ignore
                 data_root = file[rfile.tree].arrays(  # type: ignore
                     keys,
@@ -118,7 +172,7 @@ def memmap_vectors_root(
 
                 size = next(iter(data_numpy.values())).shape[0]
 
-                data_path = encode_metadata(rfile.metadata, size)
+                data_path = _encode_metadata(rfile.metadata, size)
                 vectors.expand(data_numpy | data_path)
 
         print("Saving...")
@@ -151,6 +205,66 @@ def load_root(
     shuffle=True,
     cut_constants: dict[str, Any] | None = None,
 ) -> _loader.SplitLoader:
+    """
+    Save data from ROOT files in memmap files and load them into a SplitLoader.
+
+    Parameters
+    ---
+    root_files: list[RFileConfig]
+        List of ROOT file configurations to read from, i.e. the path to the file,
+        the name of the tree to read from, and metadata to store in memmaps.
+
+    path_mmap: str
+        Path to the memmap directory.
+
+    keys: set[str]
+        Set of keys to read from the ROOT files. The keys must be scalar valued.
+
+    keys_padded: dict[str, tuple[int, Any]], optional, default: None
+        Dictionary of 1d vector valued keys to read from the ROOT files. The
+        dictionary maps the key to a tuple of the size of the vector and the
+        value to pad with.
+
+    tcut: str, optional, default: None
+        Cut on which events to load.
+
+    aliases: dict[str, str], optional, default: None
+        Dictionary of aliases to use for the keys.
+
+    recreate: bool, optional, default: False
+        If True, the memmap files are recreated even if they already exist.
+
+    batch_size: int, optional, default: 32
+        Batch size to use for the SplitLoader.
+
+    split: int, optional, default: 0
+        Which split to use for the SplitLoader.
+
+    fractions: tuple[float, ...], optional, default: (0.8, 0.1, 0.1)
+        Fractions to use for the SplitLoader.
+
+    split_seed: int, optional, default: 0
+        Seed to use for the SplitLoader.
+
+    shuffle: bool, optional, default: True
+        If True, the SplitLoader shuffles the data.
+
+    cut_constants: dict[str, Any], optional, default: None
+        Constant values to use in the cut.
+
+    Returns
+    ---
+    SplitLoader
+        Loader to load the data from the memmap files.
+
+    Raises
+    ---
+    FileNotFoundError
+        If a ROOT file is not found.
+
+    TypeError
+        If the arguments do not match the type hints.
+    """
     keys_mmemap = keys
     if tcut is not None:
         keys_mmemap = keys_mmemap | _subset._get_symbols(tcut)
