@@ -49,7 +49,7 @@ class WriteJagged:
 
         name: str
             Name of the data. This is used as key to retrieve the data via
-            `read_vector`.
+            `ReadJagged`.
 
         shape: tuple[int, ...] | None, optional, default: None
             Shape of the data. `None` if the shape is not yet fixed.
@@ -86,7 +86,7 @@ class WriteJagged:
         self.vector.__exit__(*args)
         self._index.__exit__(*args)
 
-    def append(self, value: np.ndarray) -> None:
+    def append(self: Self, value: np.ndarray) -> None:
         """
         Append a new array to the memory mapped file. The first axis of the
         given array is treated as the variable length axis. All other axes are
@@ -127,9 +127,8 @@ class ReadJagged:
 
     def __init__(self: Self, path: str, name: str) -> None:
         """
-        Initializes the context manager for reading a memory mapped array of
-        arrays with one variable length axis, i.e. a memory mapped, jagged
-        array.
+        Loads a memory mapped array of arrays with one variable length axis,
+        i.e. a memory mapped, jagged array.
 
         Parameters
         ---
@@ -142,6 +141,14 @@ class ReadJagged:
 
         Raises
         ---
+        KeyError
+            If the name is not found in the metadata.
+
+        FileNotFoundError
+            If the file for the name is not found. This could be because the
+            data was not saved properly, or the user deleted/moved/renamed the
+            underlying file.
+
         TypeError
             If any arguments python type does not match the type hints.
         """
@@ -177,6 +184,12 @@ class ReadJagged:
 
         Raises
         ---
+        IndexError
+            If the index is out of bounds.
+
+        ValueError
+            If the index is not valid, i.e. not positive or one-dimensional.
+
         TypeError
             If any arguments python type does not match the type hints.
         """
@@ -238,13 +251,57 @@ class ReadJagged:
 
 @typeguard.typechecked
 class WriteShaped:
+    """
+    Write numpy arrays with arbitrary shapes into a memory mapped file. The
+    underlying data is stored in a jagged array of flattened arrays. The shapes
+    are stored in a second jagged array.
+
+    Attributes
+    ---
+    vector: WriteJagged
+        The jagged array of flattened arrays.
+
+    _shape: WriteJagged
+        The jagged array of shapes.
+    """
+
+    vector: WriteJagged
+    _shape: WriteJagged
+
     def __init__(
         self: Self,
         path: str,
         name: str,
+        *,
         dtype: DTypeLike | None = None,
         check: str | None = None,
     ) -> None:
+        """
+        Initializes the context manager for writing a arrays with arbitrary
+        shapes into a memory mapped file.
+
+        Parameters
+        ---
+        path: str
+            Path to the directory where the memory mapped file is stored.
+
+        name: str
+            Name of the data. This is used as key to retrieve the data via
+            `ReadShaped`.
+
+        dtype: DTypeLike | None, optional, default: None
+            Dtype of the data. `None` if the dtype is inferred from the first
+            call of `append`.
+
+        check: str | None, optional, default: None
+            Checksum of the data. `None` if a timestamp at the time of saving
+            will be used as checksum.
+
+        Raises
+        ---
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
         self.vector = WriteJagged(
             path,
             name,
@@ -268,14 +325,73 @@ class WriteShaped:
         self.vector.__exit__(*args)
         self._shape.__exit__(*args)
 
-    def append(self, value: np.ndarray) -> None:
+    def append(self: Self, value: np.ndarray) -> None:
+        """
+        Append a new array to the memory mapped file. The dtype of the given
+        array must match the dtype of the previously appended arrays.
+
+        Parameters
+        ---
+        value: np.ndarray
+            The array to append.
+
+        Raises
+        ---
+        ValueError
+            If dtype of the given array does not match the previously appended
+            arrays.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
         self.vector.append(value.reshape(-1))
         self._shape.append(np.array(value.shape, dtype=np.int64))
 
 
 @typeguard.typechecked
 class ReadShaped:
+    """
+    Read a memory mapped array of arrays with arbitrary shapes. This array can
+    be indexed or iterated over.
+
+    Attributes
+    ---
+    vector: ReadJagged
+        The jagged array of flattened arrays.
+
+    _shape: ReadJagged
+        The jagged array of shapes.
+    """
+
+    vector: ReadJagged
+    _shape: ReadJagged
+
     def __init__(self: Self, path: str, name: str) -> None:
+        """
+        Loads a memory mapped array of arrays with arbitrary shapes.
+
+        Parameters
+        ---
+        path: str
+            Path to the directory where the memory mapped file is stored.
+
+        name: str
+            Name of the data. This name was used as a key to store the data via
+            the `WriteShaped` context manager.
+
+        Raises
+        ---
+        KeyError
+            If the name is not found in the metadata.
+
+        FileNotFoundError
+            If the file for the name is not found. This could be because the
+            data was not saved properly, or the user deleted/moved/renamed the
+            underlying file.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
         self.vector = ReadJagged(path, name)
         self._shape = ReadJagged(path, _labels.get_shape_name(name))
 
@@ -291,6 +407,32 @@ class ReadShaped:
         self: Self,
         index: int | np.ndarray,
     ) -> np.memmap | list[np.memmap]:
+        """
+        Get the array(s) at the given index or indices.
+
+        Parameters
+        ---
+        index: int | np.ndarray
+            The index or indices to retrieve.
+
+        Returns
+        ---
+        np.memmap | list[np.memmap]
+            If an integer is given, the array at the given index is returned.
+            If an array of integers is given, a list of the corresponding
+            arrays is returned.
+
+        Raises
+        ---
+        IndexError
+            If the index is out of bounds.
+
+        ValueError
+            If the index is not valid, i.e. not positive or one-dimensional.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
         if isinstance(index, int):
             index = np.array([index])
             return self[index][0]
@@ -316,23 +458,91 @@ class ReadShaped:
 
         return arrays
 
-    def __len__(self) -> int:
+    def __len__(self: Self) -> int:
+        """
+        Get the length of the array of heterogeneous arrays, i.e. how often the
+        `append` method was called on the corresponding `WriteShaped` context
+        manager.
+
+        Returns
+        ---
+        int
+            The number of arrays in the array of heterogeneous arrays.
+        """
         return len(self.vector)
 
-    def __iter__(self) -> Any:
+    def __iter__(self: Self) -> Generator[np.memmap, None, None]:
+        """
+        Iterate over the array of heterogeneous arrays.
+
+        Returns
+        ---
+        Generator[np.ndarray, None, None]
+            A generator yielding the arrays as `np.ndarray`s.
+        """
         for i in range(len(self)):
             yield self[i]
 
 
 @typeguard.typechecked
 class WriteStructured:
+    """
+    Write arbitrary structured data into a memory mapped file.
+
+    Attributes
+    ---
+    data: WriteShaped
+        Where the flattened data is stored.
+
+    structure: WriteShaped
+        Where the structure of the data is stored.
+
+    get_structure: Callable[[np.ndarray], np.ndarray]
+        A function that takes an array and returns its structure. This structure
+        will later be used in the `ReadStructured` class to reconstruct the
+        data.
+
+    """
+
+    get_structure: Callable[[np.ndarray], np.ndarray]
+    data: WriteShaped
+    structure: WriteShaped
+
     def __init__(
         self: Self,
         path: str,
         name: str,
+        *,
         get_structure: Callable[[np.ndarray], np.ndarray],
         check: str | None = None,
     ) -> None:
+        """
+        Initializes the context manager for writing a arrays with arbitrary
+        structure into a memory mapped file.
+
+        Parameters
+        ---
+        path: str
+            Path to the directory where the memory mapped file is stored.
+
+        name: str
+            Name of the data. This is used as key to retrieve the data via
+            `ReadStructured`.
+
+        get_structure: Callable[[np.ndarray], np.ndarray]
+            A function that takes an array and returns its structure. This
+            structure will later be used in the `ReadStructured` class to
+            reconstruct the data.
+
+        check: str | None, optional, default: None
+            Checksum of the data. `None` if a timestamp at the time of saving
+            will be used as checksum.
+
+        Raises
+        ---
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
         self.get_structure = get_structure
         self.data = WriteShaped(path, name, check=check)
         self.structure = WriteShaped(
@@ -351,18 +561,86 @@ class WriteStructured:
         self.structure.__exit__(*args)
 
     def append(self, value: np.ndarray) -> None:
+        """
+        Append a new array to the memory mapped file. The dtype of the given
+        array must match the dtype of the previously appended arrays.
+
+        Parameters
+        ---
+        value: np.ndarray
+            The array to append.
+
+        Raises
+        ---
+        ValueError
+            If dtype of the given array does not match the previously appended
+            arrays.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
         self.data.append(value)
         self.structure.append(self.get_structure(value))
 
 
 @typeguard.typechecked
 class ReadStructured:
+    """
+    Read a memory mapped array of arrays with arbitrary structure. This array
+    can be indexed or iterated over.
+
+    Attributes
+    ---
+    reconstruct: Callable[[np.ndarray, np.ndarray], Any]
+        A function that takes an array and its structure and returns the
+        original data.
+
+    data: ReadShaped
+        Where the flattened data is stored.
+
+    structure: ReadShaped
+        Where the structure of the data is stored.
+    """
+
+    reconstruct: Callable[[np.ndarray, np.ndarray], Any]
+    data: ReadShaped
+    structure: ReadShaped
+
     def __init__(
         self: Self,
         path: str,
         name: str,
         reconstruct: Callable[[np.ndarray, np.ndarray], Any],
     ) -> None:
+        """
+        Loads a memory mapped array of arrays with arbitrary structure.
+
+        Parameters
+        ---
+        path: str
+            Path to the directory where the memory mapped file is stored.
+
+        name: str
+            Name of the data. This name was used as a key to store the data via
+            the `WriteStructured` context manager.
+
+        reconstruct: Callable[[np.ndarray, np.ndarray], Any]
+            A function that takes an array and its structure and returns the
+            original data.
+
+        Raises
+        ---
+        KeyError
+            If the name is not found in the metadata.
+
+        FileNotFoundError
+            If the file for the name is not found. This could be because the
+            data was not saved properly, or the user deleted/moved/renamed the
+            underlying file.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
         self.reconstruct = reconstruct
         self.data = ReadShaped(path, name)
         self.structure = ReadShaped(path, _labels.get_structured_name(name))
@@ -376,6 +654,32 @@ class ReadStructured:
         ...
 
     def __getitem__(self: Self, index: int | np.ndarray) -> Any | list[Any]:
+        """
+        Index the array of arrays with arbitrary structure. Indexing with an
+        integer `i` returns the `i`-th array. Indexing with an array of
+        integers returns a list of the corresponding arrays.
+
+        Parameters
+        ---
+        index: int | np.ndarray
+            The index or indices to retrieve.
+
+        Returns
+        ---
+        Any | list[Any]
+            The retrieved array or list of arrays.
+
+        Raises
+        ---
+        IndexError
+            If the index is out of bounds.
+
+        ValueError
+            If the index is not valid, i.e. not positive or one-dimensional.
+
+        TypeError
+            If any arguments python type does not match the type hints.
+        """
         if isinstance(index, int):
             index = np.array([index])
             return self[index][0]

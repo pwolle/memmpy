@@ -57,6 +57,7 @@ class WriteVector:
         self: Self,
         path: str,
         name: str,
+        *,
         shape: tuple[int, ...] | None = None,
         dtype: DTypeLike | None = None,
         check: str | None = None,
@@ -372,6 +373,11 @@ def read_vector(path: str, name: str) -> np.memmap:
     ---
     KeyError
         If the name is not found in the metadata.
+
+    FileNotFoundError
+        If the file for the name is not found. This could be because the data
+        was not saved properly, or the user deleted/moved/renamed the underlying
+        file.
 
     TypeError
         If any arguments python type does not match the type hints.

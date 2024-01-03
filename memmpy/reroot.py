@@ -153,7 +153,7 @@ def load_root(
 ) -> _loader.SplitLoader:
     keys_mmemap = keys
     if tcut is not None:
-        keys_mmemap = keys_mmemap | _subset.get_symbols(tcut)
+        keys_mmemap = keys_mmemap | _subset._get_symbols(tcut)
 
     memmap_vectors_root(
         root_files,

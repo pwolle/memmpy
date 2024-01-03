@@ -10,7 +10,7 @@ from . import _labels, _loader, _vector
 
 
 @typeguard.typechecked
-def get_symbols(expression: str) -> set[str]:
+def _get_symbols(expression: str) -> set[str]:
     tree = ast.parse(expression, mode="eval")
     walk = ast.walk(tree)
 
@@ -34,7 +34,7 @@ def compute_cut_batched(
 ) -> np.memmap:
     constants = constants or {}
 
-    keys = get_symbols(expression)
+    keys = _get_symbols(expression)
     keys = keys - set(constants.keys())
 
     hasher = hashlib.sha256()
