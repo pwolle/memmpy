@@ -15,6 +15,24 @@ def get_timestamp() -> str:
 
 @typeguard.typechecked
 def hash_64bit(b: bytes) -> int:
+    """
+    Hash a byte string to a 64 bit integer.
+
+    Parameters
+    ---
+    b: bytes
+        The byte string to hash.
+
+    Returns
+    ---
+    int
+        The 64 bit integer hash.
+
+    Raises
+    ---
+    TypeError
+        If the input is not a byte string.
+    """
     hashed = hashlib.sha256(b)
     hashed = int(hashed.hexdigest(), 16)
     return hashed % 2**64
