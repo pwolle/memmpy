@@ -46,6 +46,9 @@ class RFileConfig:
     tree: str = dataclasses.field(default="nominal_Loose")
     metadata: dict[str, str] = dataclasses.field(default_factory=dict)
 
+    def __lt__(self, other: "RFileConfig") -> bool:
+        return repr(self) < repr(other)
+
 
 def _encode_metadata(
     metadata: dict[str, str],
@@ -114,7 +117,7 @@ def memmap_vectors_root(
     hasher = hashlib.sha256()
     hasher.update(str(aliases).encode())
 
-    for rfile in root_files:
+    for rfile in sorted(root_files):
         hasher.update(os.path.basename(rfile.path).encode())
         hasher.update(str(os.path.getmtime(rfile.path)).encode())
         hasher.update(str(os.path.getsize(rfile.path)).encode())
