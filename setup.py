@@ -15,7 +15,7 @@ setup(
     packages=find_packages(where="."),
     python_requires=">=3.10",
     install_requires=requirements,
-    description="Memory mapping of datasets",
+    description="Memory mapped of datasets",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/pwolle/memmpy",

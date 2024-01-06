@@ -29,7 +29,7 @@ with WriteVector(path="data.mmpy", key="testdata") as memfile:
 
 memmap_data = read_vector(path="data.mmpy", key="testdata")
 ```
-
+<!-- 
 The `memmpy` library also provides functionality to store jagged arrays or arrays with arbitrary shape using the `WriteJagged`, `ReadJagged`, `WriteShaped` and `ReadShaped` classes.
 
 ### Loading
@@ -89,4 +89,4 @@ The supplied ROOT file metadata is also stored, along with its hashes, so that t
 
 ## See also
 - [numpy.memmap](https://numpy.org/doc/stable/reference/generated/numpy.memmap.html)
-- [uproot](https://uproot.readthedocs.io/en/latest/index.html)
+- [uproot](https://uproot.readthedocs.io/en/latest/index.html) -->
