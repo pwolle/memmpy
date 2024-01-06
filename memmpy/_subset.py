@@ -6,7 +6,7 @@ import numpy as np
 import tqdm
 import typeguard
 
-from . import _labels, _loader, _vector
+from . import _labels, _vector, _loader
 
 
 @typeguard.typechecked
@@ -85,14 +85,21 @@ def compute_cut_batched(
 
     print(f"Computing cut: {expression}.")
     with _vector.WriteVector(path=path, name=expression, check=hashed) as writer:
-        batch_loader = _loader.SimpleLoader(
-            _loader.load_memmaps(path, keys),
+        batch_loader = _loader.Batched(
+            _loader.SequenceDict(_vector.read_vectors(path, keys)),  # type: ignore
             batch_size,
         )
 
-        for batch in tqdm.tqdm(batch_loader):
+        for i, batch in enumerate(tqdm.tqdm(batch_loader)):
+            batch = _loader.unwrap_recursively(batch)
             result = eval(expression, batch | constants, {})
-            index = batch["_index"][result]
+
+            index = np.arange(len(result)) + i * batch_size
+            index = index[result]
+
+            if len(index) == 0:
+                continue
+
             writer.extend(index)
 
     return _vector.read_vector(path, expression)

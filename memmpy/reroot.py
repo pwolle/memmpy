@@ -14,12 +14,11 @@ import numpy as np
 import tqdm
 import typeguard
 
-from . import _labels, _loader, _subset, _vector
+from . import _labels, _subset, _vector
 
 __all__ = [
     "RFileConfig",
-    "memmap_vectors_root",
-    "load_root",
+    "memmap_root",
 ]
 
 
@@ -68,14 +67,14 @@ def _encode_metadata(
 
 
 @typeguard.typechecked
-def memmap_vectors_root(
+def memmap_root(
     root_files: list[RFileConfig],
     path_mmap: str,
     keys: set[str],
     keys_padded: dict[str, tuple[int, Any]] | None = None,
     aliases: dict[str, str] | None = None,
     recreate: bool = False,
-) -> None:
+) -> dict[str, np.memmap]:
     """
     Store the data from the given ROOT files in a memmap files.
 
@@ -126,6 +125,13 @@ def memmap_vectors_root(
 
     hashed = hasher.hexdigest()
 
+    metadata_values = set()
+    metadata_keys = set()
+
+    for rfile in root_files:
+        metadata_values |= set(rfile.metadata.values())
+        metadata_keys |= set(rfile.metadata.keys())
+
     if not recreate:
         meta = _labels.safe_load(path_mmap)
 
@@ -143,7 +149,7 @@ def memmap_vectors_root(
         else:
             path_mmap = os.path.abspath(path_mmap)
             print(f"Using cached files in '{path_mmap}' for {list(keys)}.")
-            return
+            return _vector.read_vectors(path_mmap, keys | metadata_keys)
 
     with _vector.WriteVectorDict(path_mmap, check=hashed) as vectors:
         for rfile in tqdm.tqdm(root_files):
@@ -180,123 +186,9 @@ def memmap_vectors_root(
 
         print("Saving...")
 
-    # add hahses
-    metadata_values = set()
-
-    for rfile in root_files:
-        metadata_values |= set(rfile.metadata.values())
-
+    # add hahses to metadata
     for value in metadata_values:
         _labels.add_hash(path_mmap, value)
 
     print("Saving done.")
-
-
-@typeguard.typechecked
-def load_root(
-    root_files: list[RFileConfig],
-    path_mmap: str,
-    keys: set[str],
-    keys_padded: dict[str, tuple[int, Any]] | None = None,
-    tcut: str | None = None,
-    aliases: dict[str, str] | None = None,
-    recreate: bool = False,
-    batch_size: int = 32,
-    split: int = 0,
-    fractions: tuple[float, ...] = (0.8, 0.1, 0.1),
-    split_seed: int = 0,
-    shuffle=True,
-    cut_constants: dict[str, Any] | None = None,
-) -> _loader.SplitLoader:
-    """
-    Save data from ROOT files in memmap files and load them into a SplitLoader.
-
-    Parameters
-    ---
-    root_files: list[RFileConfig]
-        List of ROOT file configurations to read from, i.e. the path to the file,
-        the name of the tree to read from, and metadata to store in memmaps.
-
-    path_mmap: str
-        Path to the memmap directory.
-
-    keys: set[str]
-        Set of keys to read from the ROOT files. The keys must be scalar valued.
-
-    keys_padded: dict[str, tuple[int, Any]], optional, default: None
-        Dictionary of 1d vector valued keys to read from the ROOT files. The
-        dictionary maps the key to a tuple of the size of the vector and the
-        value to pad with.
-
-    tcut: str, optional, default: None
-        Cut on which events to load.
-
-    aliases: dict[str, str], optional, default: None
-        Dictionary of aliases to use for the keys.
-
-    recreate: bool, optional, default: False
-        If True, the memmap files are recreated even if they already exist.
-
-    batch_size: int, optional, default: 32
-        Batch size to use for the SplitLoader.
-
-    split: int, optional, default: 0
-        Which split to use for the SplitLoader.
-
-    fractions: tuple[float, ...], optional, default: (0.8, 0.1, 0.1)
-        Fractions to use for the SplitLoader.
-
-    split_seed: int, optional, default: 0
-        Seed to use for the SplitLoader.
-
-    shuffle: bool, optional, default: True
-        If True, the SplitLoader shuffles the data.
-
-    cut_constants: dict[str, Any], optional, default: None
-        Constant values to use in the cut.
-
-    Returns
-    ---
-    SplitLoader
-        Loader to load the data from the memmap files.
-
-    Raises
-    ---
-    FileNotFoundError
-        If a ROOT file is not found.
-
-    TypeError
-        If the arguments do not match the type hints.
-    """
-    keys_mmemap = keys
-    if tcut is not None:
-        keys_mmemap = keys_mmemap | _subset._get_symbols(tcut)
-
-    memmap_vectors_root(
-        root_files,
-        path_mmap,
-        keys_mmemap,
-        keys_padded,
-        aliases,
-        recreate,
-    )
-    keys_metadata = set()
-    for rfile in root_files:
-        keys_metadata |= set(rfile.metadata.keys())
-
-    data = _loader.load_memmaps(path_mmap, keys | keys_metadata)
-
-    subindex = None
-    if tcut is not None:
-        _subset.compute_cut_batched(path_mmap, tcut, constants=cut_constants)
-        subindex = _vector.read_vector(path_mmap, tcut)
-
-    return _loader.SplitLoader(
-        data,
-        batch_size,
-        split=split,
-        fractions=fractions,
-        subindex=subindex,
-        split_seed=split_seed,
-        shuffle=shuffle,
-    )
+    return _vector.read_vectors(path_mmap, keys | metadata_keys)

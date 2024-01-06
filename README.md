@@ -30,7 +30,7 @@ with WriteVector(path="data.mmpy", key="testdata") as memfile:
 memmap_data = read_vector(path="data.mmpy", key="testdata")
 ```
 
-The `mempy` library also provides functionality to store jagged arrays or arrays with arbitrary shape using the `WriteJagged`, `ReadJagged`, `WriteShaped` and `ReadShaped` classes.
+The `memmpy` library also provides functionality to store jagged arrays or arrays with arbitrary shape using the `WriteJagged`, `ReadJagged`, `WriteShaped` and `ReadShaped` classes.
 
 ### Loading
 A collection of memory mapped files can be loaded in batches using the `SimpleLoader` and `SplitLoader`. The `SplitLoader` also provides functionality for shuffling the dataset and splitting it into training and validation sets.

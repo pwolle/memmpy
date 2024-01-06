@@ -1,22 +1,31 @@
-from ._jagged import ReadJagged, ReadShaped, WriteJagged, WriteShaped
 from ._labels import hash_64bit
-from ._loader import SimpleLoader, SplitLoader, load_memmaps
+from ._loader import (
+    Batched,
+    FastShuffled,
+    Normalize,
+    SequenceDict,
+    Sliced,
+    Subindexed,
+    split,
+    unwrap_recursively,
+)
 from ._subset import compute_cut_batched
 from ._vector import WriteVector, WriteVectorDict, read_vector
 
 __all__ = [
-    "ReadJagged",
-    "ReadShaped",
-    "WriteJagged",
-    "WriteShaped",
     "hash_64bit",
-    "SimpleLoader",
-    "SplitLoader",
-    "load_memmaps",
+    "Batched",
+    "FastShuffled",
+    "Normalize",
+    "SequenceDict",
+    "Sliced",
+    "Subindexed",
+    "split",
+    "unwrap_recursively",
     "compute_cut_batched",
     "WriteVector",
     "WriteVectorDict",
     "read_vector",
 ]
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"

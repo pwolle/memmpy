@@ -1,79 +1,232 @@
+import collections.abc
 import math
-import os
-from typing import Any, Callable, Generator, Hashable, Self, TypeAlias
+from typing import (
+    Any,
+    Callable,
+    Hashable,
+    Iterator,
+    Literal,
+    Mapping,
+    Protocol,
+    Self,
+    overload,
+    runtime_checkable,
+)
 
 import numpy as np
 import typeguard
 
-from . import _jagged, _labels, _vector
+__all__ = [
+    "SequenceDict",
+    "unwrap_recursively",
+    "Sliced",
+    "Subindexed",
+    "FastShuffled",
+    "Batched",
+    "split",
+]
+
+# TODO implement kfold
 
 
-data_indexable: TypeAlias = (
-    np.ndarray | np.memmap | _jagged.ReadJagged | _jagged.ReadShaped
-)
+@runtime_checkable
+class NumpySequence(Protocol):
+    @overload
+    def __getitem__(self: Self, index: int) -> Any:
+        ...
+
+    @overload
+    def __getitem__(self: Self, index: slice) -> "NumpySequence":
+        ...
+
+    @overload
+    def __getitem__(self: Self, index: np.ndarray) -> "NumpySequence":
+        ...
+
+    def __getitem__(self: Self, index: int | slice | np.ndarray) -> Any:
+        ...
+
+    def __iter__(self: Self) -> Iterator:
+        ...
+
+    def __len__(self: Self) -> int:
+        ...
+
+
+def unwrap_recursively(x):
+    if hasattr(x, "unwrap"):
+        return unwrap_recursively(x.unwrap())
+
+    return x
 
 
 @typeguard.typechecked
-def load_memmaps(
-    path: str,
-    keys: set[str] | None = None,
-) -> dict[Hashable, data_indexable]:
-    """
-    Load memmaps from a memmpy directory.
+class SequenceDict(collections.abc.Sequence):
+    def __init__(
+        self: Self,
+        _sequences: dict,
+    ) -> None:
+        self._sequences = _sequences
 
-    Parameters
-    ---
-    path : str
-        Path to the memmpy directory.
+        if len(set(map(len, _sequences.values()))) != 1:
+            raise ValueError("All sequences must have the same length.")
 
-    keys : set[str], optional
-        Keys to load. If None, all keys are loaded.
+        self._length = len(next(iter(_sequences.values())))
 
-    Returns
-    ---
-    dict[Hashable, data_indexable]
-        The loaded data. Has the same keys as requested.
+    @overload
+    def __getitem__(self: Self, index: int) -> dict[Hashable, Any]:
+        ...
 
-    Raises
-    ---
-    ValueError
-        If the path is not found or not a directory.
+    @overload
+    def __getitem__(self: Self, index: slice) -> "NumpySequence":
+        ...
 
-    KeyError
-        If a requested key is not found in the metadata.
-    """
-    if not os.path.isdir(path):
-        raise ValueError(f"Path '{path}' is not a directory.")
+    @overload
+    def __getitem__(self: Self, index: np.ndarray) -> "NumpySequence":
+        ...
 
-    meta = _labels.safe_load(path)
-    keys = keys or meta["arrays"].keys()
-    data = {}
+    def __getitem__(
+        self: Self,
+        index: int | slice | np.ndarray,
+    ) -> Any:
+        if isinstance(index, int):
+            if index < 0:
+                index += len(self)
 
-    for k in keys:
-        if _labels.get_index_name(k) in meta["arrays"]:
-            data[k] = _jagged.ReadJagged(path, k)
-            continue
+            if index < 0 or index >= len(self):
+                raise IndexError(f"Index {index} out of bounds.")
 
-        if _labels.get_shape_name(k) in meta["arrays"]:
-            data[k] = _jagged.ReadShaped(path, k)
-            continue
+            return {k: v[index] for k, v in self._sequences.items()}
 
-        if _labels.get_structured_name(k) in meta["arrays"]:
-            # Skipping structured data.
-            # This is because we do not know how to reconstruct it here.
-            continue
+        indexed = {}
+        for k, v in self._sequences.items():
+            indexed[k] = v[index]
 
-        if k not in meta["arrays"]:
-            raise KeyError(f"Key '{k}' not found in metadata.")
+        return SequenceDict(indexed)
 
-        data[k] = _vector.read_vector(path, k)
+    def __len__(self: Self) -> int:
+        return self._length
 
-    return data
+    def unwrap(
+        self: Self,
+    ) -> Mapping[Hashable, NumpySequence | np.memmap | np.ndarray]:
+        return self._sequences
+
+
+@typeguard.typechecked
+class _Sliced(collections.abc.Sequence):
+    def __init__(
+        self,
+        _sequence: NumpySequence | np.memmap | np.ndarray,
+        _slice: slice,
+        /,
+    ) -> None:
+        self._sequence = _sequence
+
+        self._start = _slice.start or 0
+        self._stop = _slice.stop or len(_sequence)
+        self._step = _slice.step or 1
+
+        if self._start < 0:
+            self._start += len(_sequence)
+
+        if self._stop < 0:
+            self._stop += len(_sequence)
+
+        # check if start or stop are out of bounds
+        if not 0 <= self._start < len(_sequence):
+            raise IndexError(f"Start index {self._start} out of bounds.")
+
+        if not 0 <= self._stop <= len(_sequence):
+            raise IndexError(f"Stop index {self._stop} out of bounds.")
+
+    def __getitem__(self: Self, index: int | slice | np.ndarray) -> Any:
+        if isinstance(index, int):
+            if index < 0:
+                index += len(self)
+
+            if index < 0 or index >= len(self):
+                raise IndexError(f"Index {index} out of bounds.")
+
+            return self._sequence[self._start + self._step * index]
+
+        if isinstance(index, slice):
+            return Sliced(self, index)
+
+        if isinstance(index, np.ndarray):
+            index[index < 0] += len(self)
+
+            if any(index < 0) or any(index >= len(self)):
+                raise IndexError(f"Index {index} out of bounds.")
+
+            return self._sequence[self._start + self._step * index]
+
+        raise TypeError(f"Invalid index type: {type(index)}")
+
+    def __len__(self: Self) -> int:
+        return (self._stop - self._start + self._step - 1) // self._step
+
+    def unwrap(self: Self) -> NumpySequence | np.memmap | np.ndarray:
+        index = np.arange(len(self))
+        return self[index]
+
+
+def Sliced(
+    x: NumpySequence | np.memmap | np.ndarray,
+    s: slice,
+) -> _Sliced | np.memmap | np.ndarray:
+    if isinstance(x, (np.ndarray, np.memmap, list, tuple, range)):
+        return x[s]
+
+    return _Sliced(x, s)
+
+
+@typeguard.typechecked
+class Subindexed(collections.abc.Sequence):
+    def __init__(
+        self: Self,
+        _sequence: NumpySequence | np.memmap | np.ndarray,
+        _subindex: np.ndarray | np.memmap,  # TODO also a NumpySequence (?)
+    ) -> None:
+        if _subindex.ndim != 1:
+            raise ValueError("Subindex must have ndim=1.")
+
+        if not np.issubdtype(_subindex.dtype, np.integer):
+            raise ValueError("Subindex must have integer dtype.")
+
+        # do not test whether subindex is in bounds, the sequence and
+        # subindex might be very large and only small parts of this index
+        # might be used, so the wait might be much longer than the actual
+        # time this index would be used for
+        self._sequence = _sequence
+        self._subindex = _subindex.astype(np.intp)
+
+    def __getitem__(self, index: int | slice | np.ndarray) -> Any:
+        if isinstance(index, int):
+            return self._sequence[self._subindex[index]]
+
+        if isinstance(index, slice):
+            return Subindexed(self._sequence, self._subindex[index])
+
+        if isinstance(index, np.ndarray):
+            # print(index)
+            return self._sequence[self._subindex[index]]
+
+        raise TypeError(f"Invalid index type: {type(index)}")
+
+    def __len__(self) -> int:
+        return len(self._subindex)
+
+    def unwrap(self: Self) -> NumpySequence | np.memmap | np.ndarray:
+        print(self._sequence)
+        return self._sequence[self._subindex]
 
 
 @typeguard.typechecked
 def permutation_bands(length: int) -> Callable[[np.ndarray], np.ndarray]:
     bands_total = int(math.log2(length) ** 2)
+    bands_total = min(bands_total, length // 2)
+
     band_offsets = np.random.uniform(size=bands_total)
     band_offsets = (band_offsets * length).astype(np.int64)
 
@@ -114,6 +267,24 @@ def permutation_modulus(
     return permute
 
 
+class FixedSeed:
+    def __init__(self, seed: int | None) -> None:
+        self._seed = seed
+
+    def __enter__(self: Self) -> None:
+        if self._seed is None:
+            return
+
+        self.state = np.random.get_state()
+        np.random.seed(self._seed)
+
+    def __exit__(self: Self, *_) -> None:
+        if self._seed is None:
+            return
+
+        np.random.set_state(self.state)
+
+
 @typeguard.typechecked
 def permutation_combination(length: int) -> Callable[[np.ndarray], np.ndarray]:
     perm1 = permutation_modulus(length)
@@ -129,338 +300,153 @@ def permutation_combination(length: int) -> Callable[[np.ndarray], np.ndarray]:
 
 
 @typeguard.typechecked
-def generate_batch_indicies(
-    length: int,
-    batch_size: int,
-    drop_remainder: bool = True,
-) -> Generator[np.ndarray, None, None]:
-    for i in range(0, length - batch_size + 1, batch_size):
-        yield np.arange(i, i + batch_size, dtype=np.int64)
-
-    if not drop_remainder:
-        remainder = length % batch_size
-        yield np.arange(length - remainder, length, dtype=np.int64)
-
-
-def _safe_take_set(s) -> Any:
-    s = set(s)
-
-    if len(s) != 1:
-        raise ValueError("Set does not have size 1.")
-
-    return next(iter(s))
-
-
-@typeguard.typechecked
-class SimpleLoader:
-    """
-    Iterates over a dictionary of numpy arrays or memmaps in batches.
-
-    Attributes
-    ---
-    data : dict[Hashable, np.ndarray | np.memmap]
-        The data to iterate over.
-
-    batch_size : int
-        The batch size.
-    """
-
-    data: dict[Hashable, data_indexable]
-    batch_size: int
-
+class FastShuffled(collections.abc.Sequence):
     def __init__(
-        self: Self,
-        data: dict[Hashable, data_indexable],
-        batch_size: int = 32,
-    ) -> None:
-        """
-        Initialize an itereable class which can generate batches from a
-        dictionary of numpy arrays or memmaps.
-
-        Parameters
-        ---
-        data : dict[Hashable, data_indexable]
-            The data to iterate over.
-
-        batch_size : int, optional, default: 32
-            The batch size.
-
-        Raises
-        ---
-        ValueError
-            If the data is empty or if the length is not the same for all
-            arrays.
-
-        ValueError
-            If the batch size is not positive.
-
-        ValueError
-            If the batch size is larger than the data length.
-
-        KeyError
-            If the key '_index' is present in the data. This key is used
-            internally already.
-
-        TypeError
-            If the given arguments do not match the type annotations.
-        """
-        if len(data) == 0:
-            raise ValueError("Data is empty.")
-
-        if batch_size <= 0:
-            raise ValueError("Batch size must be positive.")
-
-        if "_index" in data:
-            raise KeyError("Key '_index' is already used internally.")
-
-        self.data = data
-        self.data_len: int = _safe_take_set(len(v) for v in self.data.values())
-
-        if batch_size > self.data_len:
-            raise ValueError("Batch size is larger than the data length.")
-
-        self.batch_size = batch_size
-
-    def __iter__(self: Self) -> Generator[dict, None, None]:
-        """
-        Iterate over the data in batches. The last batch may be smaller than
-        the batch size.
-
-        Yields
-        ---
-        dict
-            The next batch. The keys are the same as the data given to the
-            constructor. A new key '_index' is added which contains the
-            indicies of the batch.
-
-        Raises
-        ---
-        TypeError
-            If the given arguments do not match the type annotations.
-        """
-        data_len_rounded = self.data_len - self.batch_size + 1
-
-        for i in range(0, data_len_rounded, self.batch_size):
-            indicies = np.arange(i, i + self.batch_size, dtype=np.int64)
-            batch = {k: v[indicies] for k, v in self.data.items()}
-            yield batch | {"_index": indicies}
-
-        remainder = self.data_len % self.batch_size
-        if remainder != 0:
-            indicies = np.arange(
-                self.data_len - remainder,
-                self.data_len,
-                dtype=np.int64,
-            )
-            batch = {k: v[indicies] for k, v in self.data.items()}
-            yield batch | {"_index": indicies}
-
-    def __len__(self: Self) -> int:
-        """
-        Get the length of the iterator.
-
-        Returns
-        ---
-        int
-            The length of the iterator.
-        """
-        result = self.data_len // self.batch_size
-
-        if self.data_len % self.batch_size != 0:
-            result += 1
-
-        return result
-
-
-class FixedSeed:
-    def __init__(self, seed: int) -> None:
-        self.seed = seed
-
-    def __enter__(self: Self) -> None:
-        self.state = np.random.get_state()
-        np.random.seed(self.seed)
-
-    def __exit__(self: Self, *_) -> None:
-        np.random.set_state(self.state)
-
-
-@typeguard.typechecked
-class SplitLoader:
-    """
-    Loads batches from a dictionary of numpy arrays or memmaps. This loader is
-    designed to be used in machine learning training loops. It supports
-    shuffling, splitting the data and subindexing, i.e. only loading a subset
-    of the data.
-
-    Attributes
-    ---
-    data : dict[Hashable, data_indexable]
-        The data to iterate over.
-
-    batch_size : int
-        The batch size.
-
-    split : int
-        The split to use. This is an index into the fractions tuple.
-
-    fractions : tuple[float, ...]
-        The fractions of the data to use for training, validation and testing.
-        The fractions must sum to 1.
-
-    subindex : np.memmap | None
-        A memmap containing the indicies to use. If None, all indicies are
-        used.
-
-    split_seed : int
-        The seed to use for splitting the data.
-
-    shuffle : bool
-        Whether to shuffle the data before splitting.
-
-    data_len : int
-        The length of the data.
-
-    split_length : int
-        The length of the split.
-
-    split_start : int
-        The start index of the split in the split permutation
-    """
-
-    data: dict[Hashable, data_indexable]
-    batch_size: int
-    split: int
-    fractions: tuple[float, ...]
-    subindex: np.memmap | np.ndarray | None
-    split_seed: int
-    shuffle: bool
-    data_len: int
-    split_length: int
-    split_start: int
-
-    # TODO if batchsize is larger than length, repeat data
-
-    def __init__(
-        self: Self,
-        data: dict[Hashable, data_indexable],
-        batch_size: int = 32,
+        self,
+        sequence: NumpySequence | np.memmap | np.ndarray,
+        /,
         *,
-        split: int = 0,
-        fractions: tuple[float, ...] = (0.8, 0.1, 0.1),
-        subindex: np.memmap | np.ndarray | None = None,
-        split_seed: int = 0,
-        shuffle=True,
+        seed: int | None = None,
     ) -> None:
-        """
-        Initialize an itereable class which can generate batches from a
-        dictionary of numpy arrays or memmaps for machine learning training
-        loops.
+        self._sequence = sequence
 
-        Parameters
-        ---
-        data : dict[Hashable, data_indexable]
-            The data to iterate over.
+        with FixedSeed(seed):
+            self._permutation = permutation_combination(len(sequence))
 
-        batch_size : int, optional, default: 32
-            The batch size.
+    def __getitem__(self, index: int | slice | np.ndarray) -> Any:
+        if isinstance(index, int):
+            if index < 0:
+                index += len(self)
 
-        split : int, optional, default: 0
-            The split to use. This is an index into the fractions tuple.
+            if index < 0 or index >= len(self):
+                raise IndexError(f"Index {index} out of bounds.")
 
-        fractions : tuple[float, ...], optional, default: (0.8, 0.1, 0.1)
-            The fractions of the data to use for training, validation and
-            testing. The fractions must sum to 1.
+            index_arr = np.array([index])
+            index_int = self._permutation(index_arr)[0]
+            return self._sequence[index_int]
 
-        subindex : np.memmap | np.ndarray | None, optional, default: None
-            A memmap containing the indicies to use. If None, all indicies are
-            used.
+        if isinstance(index, slice):
+            return Sliced(self, index)
 
-        split_seed : int, optional, default: 0
-            The seed to use for splitting the data.
+        if isinstance(index, np.ndarray):
+            index[index < 0] += len(self)
 
-        shuffle : bool, optional, default: True
-            Whether to shuffle the data before splitting.
+            if any(index < 0) or any(index >= len(self)):
+                raise IndexError(f"Index {index} out of bounds.")
 
-        Raises
-        ---
-        ValueError
-            If the fractions do not sum to 1, or the batch size is not positive.
+            return self._sequence[self._permutation(index)]
 
-        TypeError
-            If the given arguments do not match the type annotations.
-        """
-
-        if abs(sum(fractions) - 1.0) > 1e-8:
-            raise ValueError("Fractions must sum to 1.")
-
-        if batch_size <= 0:
-            raise ValueError("Batch size must be positive.")
-
-        self.data = data
-        self.data_len: int = _safe_take_set(len(v) for v in self.data.values())
-
-        if batch_size > self.data_len and subindex is None:
-            factor = math.ceil(batch_size / self.data_len)
-            subindex = np.arange(self.data_len, dtype=np.int64)
-
-        if subindex is not None and batch_size > len(subindex):
-            factor = math.ceil(batch_size / len(subindex))
-            subindex = np.tile(subindex, factor)
-
-        self.batch_size = batch_size
-        self.split = split
-        self.fractions = fractions
-        self.subindex = subindex
-        self.shuffle = shuffle
-
-        if self.subindex is not None:
-            self.data_len = len(self.subindex)
-
-        with FixedSeed(split_seed):
-            self.split_perm = permutation_combination(self.data_len)
-
-        self.split_length = int(self.data_len * fractions[split])
-        self.split_start = int(
-            sum(self.data_len * f for f in fractions[:split]),
-        )
-
-    def __iter__(self: Self) -> Generator[dict, None, None]:
-        """
-        Iterate over the data in batches. If the last batch would be smaller
-        than the batch size, it is dropped.
-
-        Yields
-        ---
-        dict
-            The next batch. The keys are the same as the data given to the
-            constructor. A new key '_index' is added which contains the
-            indicies of the batch.
-        """
-        data_len_rounded = self.split_length - self.batch_size + 1
-
-        if self.shuffle:
-            perm_shuffle = permutation_combination(self.split_length)
-        else:
-            perm_shuffle = lambda x: x
-
-        for i in range(0, data_len_rounded, self.batch_size):
-            indicies = np.arange(i, i + self.batch_size, dtype=np.int64)
-            indicies = self.split_perm(indicies + self.split_start)
-            indicies = perm_shuffle(indicies)
-
-            if self.subindex is not None:
-                indicies = self.subindex[indicies]
-
-            batch = {k: v[indicies] for k, v in self.data.items()}
-            yield batch | {"_index": indicies}
+        raise TypeError(f"Invalid index type: {type(index)}")
 
     def __len__(self) -> int:
-        """
-        Get the length of the iterator.
+        return len(self._sequence)
 
-        Returns
-        ---
-        int
-            The length of the iterator.
-        """
-        return self.split_length // self.batch_size
+    def unwrap(self) -> NumpySequence | np.memmap | np.ndarray:
+        index = np.arange(len(self))
+        return self[index]
+
+
+@typeguard.typechecked
+class Batched(collections.abc.Sequence):
+    def __init__(
+        self,
+        _sequence: NumpySequence | np.memmap | np.ndarray,
+        /,
+        batch_size: int,
+        drop_remainder: bool = False,
+    ) -> None:
+        self._sequence = _sequence
+        self._batch_size = batch_size
+        self._drop_remainder = drop_remainder
+
+    def __getitem__(self, index: int | slice | np.ndarray) -> Any:
+        if isinstance(index, int):
+            if index < 0:
+                index += len(self)
+
+            if index < 0 or index >= len(self):
+                raise IndexError(f"Index {index} out of bounds.")
+
+            start = index * self._batch_size
+            stop = (index + 1) * self._batch_size
+
+            if not self._drop_remainder:
+                stop = min(stop, len(self._sequence))
+
+            return self._sequence[start:stop]
+
+        if isinstance(index, slice):
+            return Sliced(self, index)
+
+        if isinstance(index, np.ndarray):
+            index[index < 0] += len(self)
+
+            if any(index < 0) or any(index >= len(self)):
+                raise IndexError(f"Index {index} out of bounds.")
+
+            result = []
+
+            for i in index:
+                start = i * self._batch_size
+                stop = (i + 1) * self._batch_size
+
+                if not self._drop_remainder:
+                    stop = min(stop, len(self._sequence))
+
+                result.append(self._sequence[start:stop])
+
+            return result
+
+        raise TypeError(f"Invalid index type: {type(index)}")
+
+    def __len__(self) -> int:
+        if self._drop_remainder:
+            return len(self._sequence) // self._batch_size
+
+        return (len(self._sequence) + self._batch_size - 1) // self._batch_size
+
+    def unwrap(self) -> NumpySequence | np.memmap | np.ndarray:
+        index = np.arange(len(self))
+        return self[index]
+
+
+@typeguard.typechecked
+def split(
+    sequence: NumpySequence,
+    split_index: int | Literal["train", "valid", "test"] = "train",
+    split_fracs: tuple[float, ...] = (0.8, 0.1, 0.1),
+) -> _Sliced | np.memmap | np.ndarray:
+    if abs(sum(split_fracs) - 1) > 1e-12:
+        raise ValueError("Split fractions must sum to 1.")
+
+    if isinstance(split_index, str):
+        split_index = {"train": 0, "valid": 1, "test": 2}[split_index]
+
+    if split_index >= len(split_fracs):
+        raise ValueError("Split index out of bounds.")
+
+    start = int(sum(len(sequence) * f for f in split_fracs[:split_index]))
+    length = int(len(sequence) * split_fracs[split_index])
+    return Sliced(sequence, slice(start, start + length))
+
+
+# class Normalize(collections.abc.Sequence):
+#     def __init__(self, _sequence: np.ndarray | np.memmap) -> None:
+#         self._sequence = _sequence
+#         self._mean = _sequence.mean(axis=0, keepdims=True)
+#         self._stdd = _sequence.std(axis=0, keepdims=True)
+
+#     def norm(self, x: np.ndarray) -> np.ndarray:
+#         return (x - self._mean) / self._stdd
+
+#     def unnorm(self, x: np.ndarray) -> np.ndarray:
+#         return x * self._stdd + self._mean
+
+#     def __getitem__(self, index: int | slice | np.ndarray) -> np.ndarray:
+#         return self.norm(self._sequence[index])
+
+#     def __len__(self) -> int:
+#         return len(self._sequence)
+
+#     def unwrap(self) -> np.ndarray | np.memmap:
+#         return self.norm(self._sequence)

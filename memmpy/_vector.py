@@ -393,3 +393,46 @@ def read_vector(path: str, name: str) -> np.memmap:
         raise FileNotFoundError(error)
 
     return np.memmap(mmap_path, dtype, "r", shape=shape)
+
+
+@typeguard.typechecked
+def read_vectors(path: str, keys: set[str] | None = None) -> dict[str, np.memmap]:
+    """
+    Read a dictionary of memory mapped vectors from a memmpy directory.
+
+    Parameters
+    ---
+    path: str
+        Path to the memmpy directory.
+
+    keys : set[str], optional
+        Keys to load. If None, all keys are loaded.
+
+    Raises
+    ---
+    ValueError
+        If the path is not found or not a directory.
+
+    KeyError
+        If a requested key is not found in the metadata.
+
+    FileNotFoundError
+        If the file for the name is not found. This could be because the data
+        was not saved properly, or the user deleted/moved/renamed the underlying
+        file.
+
+    TypeError
+        If any arguments python type does not match the type hints.
+    """
+
+    if not os.path.isdir(path):
+        raise ValueError(f"Path '{path}' is not a directory.")
+
+    meta = _labels.safe_load(path)
+    keys = keys or set(meta["arrays"].keys())
+    data = {}
+
+    for k in keys:
+        data[k] = read_vector(path, k)
+
+    return data
