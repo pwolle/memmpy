@@ -2,7 +2,6 @@ from ._labels import hash_64bit
 from ._loader import (
     Batched,
     FastShuffled,
-    Normalize,
     SequenceDict,
     Sliced,
     Subindexed,
@@ -16,7 +15,6 @@ __all__ = [
     "hash_64bit",
     "Batched",
     "FastShuffled",
-    "Normalize",
     "SequenceDict",
     "Sliced",
     "Subindexed",

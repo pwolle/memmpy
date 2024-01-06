@@ -14,7 +14,7 @@ import numpy as np
 import tqdm
 import typeguard
 
-from . import _labels, _subset, _vector
+from . import _labels, _vector
 
 __all__ = [
     "RFileConfig",
