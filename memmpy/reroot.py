@@ -114,7 +114,9 @@ def memmap_root(
     keys = keys | set(keys_padded.keys())
 
     hasher = hashlib.sha256()
-    hasher.update(str(aliases).encode())
+    for k in sorted(aliases.keys()):
+        hasher.update(str(k).encode())
+        hasher.update(aliases[k].encode())
 
     for rfile in sorted(root_files):
         hasher.update(os.path.basename(rfile.path).encode())

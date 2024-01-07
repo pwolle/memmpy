@@ -26,7 +26,7 @@ __all__ = [
     "split",
 ]
 
-# TODO implement kfold
+# TODO implement kfold, and mapping, also norm?
 
 
 @runtime_checkable
