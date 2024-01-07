@@ -31,6 +31,11 @@ __all__ = [
 
 @runtime_checkable
 class NumpySequence(Protocol):
+    """
+    Similar to collections.abc.Sequence, but also allows for indexing with
+    numpy arrays, to get multiple elements at once.
+    """
+
     @overload
     def __getitem__(self: Self, index: int) -> Any:
         ...
@@ -54,6 +59,12 @@ class NumpySequence(Protocol):
 
 
 def unwrap_recursively(x):
+    """
+    Try to use the `unwrap` method of an object recursively, if it exists,
+    otherwise return the object itself.
+    This is usefull for getting the underlying data out of lazy sequence
+    manipulations.
+    """
     if hasattr(x, "unwrap"):
         return unwrap_recursively(x.unwrap())
 
@@ -62,6 +73,10 @@ def unwrap_recursively(x):
 
 @typeguard.typechecked
 class SequenceDict(collections.abc.Sequence):
+    """
+    Comnine multiple sequences into a single sequence using a dictionary.
+    """
+
     def __init__(
         self: Self,
         _sequences: dict,
@@ -115,6 +130,10 @@ class SequenceDict(collections.abc.Sequence):
 
 @typeguard.typechecked
 class _Sliced(collections.abc.Sequence):
+    """
+    Lalazily slice of a sequence by wrapping the __getitem__ method.
+    """
+
     def __init__(
         self,
         _sequence: NumpySequence | np.memmap | np.ndarray,
@@ -175,6 +194,10 @@ def Sliced(
     x: NumpySequence | np.memmap | np.ndarray,
     s: slice,
 ) -> _Sliced | np.memmap | np.ndarray:
+    """
+    Slice a sequence. If it is a numpy array, the slicing is done directly,
+    otherwise a lazy wrapper is returned.
+    """
     if isinstance(x, (np.ndarray, np.memmap, list, tuple, range)):
         return x[s]
 
@@ -183,6 +206,10 @@ def Sliced(
 
 @typeguard.typechecked
 class Subindexed(collections.abc.Sequence):
+    """
+    Restrict a sequence to a subset of indicies.
+    """
+
     def __init__(
         self: Self,
         _sequence: NumpySequence | np.memmap | np.ndarray,
@@ -244,7 +271,7 @@ def permutation_bands(length: int) -> Callable[[np.ndarray], np.ndarray]:
 
 
 @typeguard.typechecked
-def permutation_modulus(
+def permutation_blocks(
     length: int,
     modulus: int = int(2**17 - 1),
 ) -> Callable[[np.ndarray], np.ndarray]:
@@ -286,8 +313,8 @@ class FixedSeed:
 
 
 @typeguard.typechecked
-def permutation_combination(length: int) -> Callable[[np.ndarray], np.ndarray]:
-    perm1 = permutation_modulus(length)
+def permutation_fast(length: int) -> Callable[[np.ndarray], np.ndarray]:
+    perm1 = permutation_blocks(length)
     perm2 = permutation_bands(length)
 
     @typeguard.typechecked
@@ -301,6 +328,10 @@ def permutation_combination(length: int) -> Callable[[np.ndarray], np.ndarray]:
 
 @typeguard.typechecked
 class FastShuffled(collections.abc.Sequence):
+    """
+    Lazily shuffle a sequence using a fast permutation function.
+    """
+
     def __init__(
         self,
         sequence: NumpySequence | np.memmap | np.ndarray,
@@ -311,7 +342,7 @@ class FastShuffled(collections.abc.Sequence):
         self._sequence = sequence
 
         with FixedSeed(seed):
-            self._permutation = permutation_combination(len(sequence))
+            self._permutation = permutation_fast(len(sequence))
 
     def __getitem__(self, index: int | slice | np.ndarray) -> Any:
         if isinstance(index, int):
@@ -348,6 +379,10 @@ class FastShuffled(collections.abc.Sequence):
 
 @typeguard.typechecked
 class Batched(collections.abc.Sequence):
+    """
+    Lazily collect a sequence into batches.
+    """
+
     def __init__(
         self,
         _sequence: NumpySequence | np.memmap | np.ndarray,
@@ -415,7 +450,13 @@ def split(
     sequence: NumpySequence,
     split_index: int | Literal["train", "valid", "test"] = "train",
     split_fracs: tuple[float, ...] = (0.8, 0.1, 0.1),
+    shuffle: bool = True,
+    seed: int | None = 42,
 ) -> _Sliced | np.memmap | np.ndarray:
+    """
+    Get a slice of a sequence according to a split fraction. This is useful
+    for splitting a dataset into training, validation and test set.
+    """
     if abs(sum(split_fracs) - 1) > 1e-12:
         raise ValueError("Split fractions must sum to 1.")
 
@@ -424,6 +465,9 @@ def split(
 
     if split_index >= len(split_fracs):
         raise ValueError("Split index out of bounds.")
+
+    if shuffle:
+        sequence = FastShuffled(sequence, seed=seed)
 
     start = int(sum(len(sequence) * f for f in split_fracs[:split_index]))
     length = int(len(sequence) * split_fracs[split_index])
