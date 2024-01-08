@@ -16,7 +16,7 @@ pip install memmpy
 ## Usage
 A simple memory mapped file can be created as follows:
 ```python
-with WriteVector(path="data.mmpy", key="testdata") as memfile:
+with WriteVector(path="data.mmpy", name="testdata") as memfile:
     # Append a single numpy array.
     # The shape and dtype will be inferred from the array.
     memfile.append(np.array([1, 2, 3]))
@@ -27,7 +27,7 @@ with WriteVector(path="data.mmpy", key="testdata") as memfile:
     # Extend the file by an array with an additional axis.
     memfile.extend(np.array([[7, 8, 9], [10, 11, 12]]))
 
-memmap_data = read_vector(path="data.mmpy", key="testdata")
+memmap_data = read_vector(path="data.mmpy", name="testdata")
 ```
 <!-- 
 The `memmpy` library also provides functionality to store jagged arrays or arrays with arbitrary shape using the `WriteJagged`, `ReadJagged`, `WriteShaped` and `ReadShaped` classes.
