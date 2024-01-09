@@ -1,29 +1,31 @@
-from ._labels import hash_64bit
+from ._labels import hash_64bit, safe_load
 from ._loader import (
     Batched,
-    Shuffled,
     Dict,
-    Sliced,
     Indexed,
+    Shuffled,
+    Sliced,
     split,
     unwrap,
 )
 from ._subset import compute_cut_batched
-from ._vector import WriteVector, WriteVectorDict, read_vector
+from ._vector import WriteVector, WriteVectorDict, read_vector, read_vectors
 
 __all__ = [
     "hash_64bit",
+    "safe_load",
     "Batched",
     "Shuffled",
     "Dict",
-    "Sliced",
     "Indexed",
+    "Sliced",
     "split",
     "unwrap",
     "compute_cut_batched",
     "WriteVector",
     "WriteVectorDict",
     "read_vector",
+    "read_vectors",
 ]
 
-__version__ = "0.1.5"
+__version__ = "0.1.7"
