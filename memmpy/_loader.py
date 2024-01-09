@@ -17,16 +17,16 @@ import numpy as np
 import typeguard
 
 __all__ = [
-    "SequenceDict",
-    "unwrap_recursively",
+    "Dict",
+    "unwrap",
     "Sliced",
-    "Subindexed",
-    "FastShuffled",
+    "Indexed",
+    "Shuffled",
     "Batched",
     "split",
 ]
 
-# TODO implement kfold, and mapping, also norm?
+# TODO implement kfold, and mapping, also concat?
 
 
 @runtime_checkable
@@ -58,21 +58,21 @@ class NumpySequence(Protocol):
         ...
 
 
-def unwrap_recursively(x):
+def unwrap(x):
     """
-    Try to use the `unwrap` method of an object recursively, if it exists,
+    Try to use the `_unwrap` method of an object recursively, if it exists,
     otherwise return the object itself.
     This is usefull for getting the underlying data out of lazy sequence
     manipulations.
     """
-    if hasattr(x, "unwrap"):
-        return unwrap_recursively(x.unwrap())
+    if hasattr(x, "_unwrap"):
+        return unwrap(x._unwrap())
 
     return x
 
 
 @typeguard.typechecked
-class SequenceDict(collections.abc.Sequence):
+class Dict(collections.abc.Sequence):
     """
     Comnine multiple sequences into a single sequence using a dictionary.
     """
@@ -117,12 +117,12 @@ class SequenceDict(collections.abc.Sequence):
         for k, v in self._sequences.items():
             indexed[k] = v[index]
 
-        return SequenceDict(indexed)
+        return Dict(indexed)
 
     def __len__(self: Self) -> int:
         return self._length
 
-    def unwrap(
+    def _unwrap(
         self: Self,
     ) -> Mapping[Hashable, NumpySequence | np.memmap | np.ndarray]:
         return self._sequences
@@ -185,7 +185,7 @@ class _Sliced(collections.abc.Sequence):
     def __len__(self: Self) -> int:
         return (self._stop - self._start + self._step - 1) // self._step
 
-    def unwrap(self: Self) -> NumpySequence | np.memmap | np.ndarray:
+    def _unwrap(self: Self) -> NumpySequence | np.memmap | np.ndarray:
         index = np.arange(len(self))
         return self[index]
 
@@ -205,7 +205,7 @@ def Sliced(
 
 
 @typeguard.typechecked
-class Subindexed(collections.abc.Sequence):
+class _Indexed(collections.abc.Sequence):
     """
     Restrict a sequence to a subset of indicies.
     """
@@ -233,7 +233,7 @@ class Subindexed(collections.abc.Sequence):
             return self._sequence[self._subindex[index]]
 
         if isinstance(index, slice):
-            return Subindexed(self._sequence, self._subindex[index])
+            return Indexed(self._sequence, self._subindex[index])
 
         if isinstance(index, np.ndarray):
             # print(index)
@@ -244,9 +244,23 @@ class Subindexed(collections.abc.Sequence):
     def __len__(self) -> int:
         return len(self._subindex)
 
-    def unwrap(self: Self) -> NumpySequence | np.memmap | np.ndarray:
+    def _unwrap(self: Self) -> NumpySequence | np.memmap | np.ndarray:
         print(self._sequence)
         return self._sequence[self._subindex]
+
+
+def Indexed(
+    x: NumpySequence | np.memmap | np.ndarray,
+    i: np.ndarray | np.memmap,
+) -> _Indexed | np.memmap | np.ndarray:
+    """
+    Restrict a sequence to a subset of indicies. If it is a numpy array, the
+    indexing is done directly, otherwise a lazy wrapper is returned.
+    """
+    if isinstance(x, (np.ndarray, np.memmap)):
+        return x[i]
+
+    return _Indexed(x, i)
 
 
 @typeguard.typechecked
@@ -327,7 +341,7 @@ def permutation_fast(length: int) -> Callable[[np.ndarray], np.ndarray]:
 
 
 @typeguard.typechecked
-class FastShuffled(collections.abc.Sequence):
+class Shuffled(collections.abc.Sequence):
     """
     Lazily shuffle a sequence using a fast permutation function.
     """
@@ -372,7 +386,7 @@ class FastShuffled(collections.abc.Sequence):
     def __len__(self) -> int:
         return len(self._sequence)
 
-    def unwrap(self) -> NumpySequence | np.memmap | np.ndarray:
+    def _unwrap(self) -> NumpySequence | np.memmap | np.ndarray:
         index = np.arange(len(self))
         return self[index]
 
@@ -440,7 +454,7 @@ class Batched(collections.abc.Sequence):
 
         return (len(self._sequence) + self._batch_size - 1) // self._batch_size
 
-    def unwrap(self) -> NumpySequence | np.memmap | np.ndarray:
+    def _unwrap(self) -> NumpySequence | np.memmap | np.ndarray:
         index = np.arange(len(self))
         return self[index]
 
@@ -467,30 +481,48 @@ def split(
         raise ValueError("Split index out of bounds.")
 
     if shuffle:
-        sequence = FastShuffled(sequence, seed=seed)
+        sequence = Shuffled(sequence, seed=seed)
 
     start = int(sum(len(sequence) * f for f in split_fracs[:split_index]))
     length = int(len(sequence) * split_fracs[split_index])
     return Sliced(sequence, slice(start, start + length))
 
 
-# class Normalize(collections.abc.Sequence):
-#     def __init__(self, _sequence: np.ndarray | np.memmap) -> None:
-#         self._sequence = _sequence
-#         self._mean = _sequence.mean(axis=0, keepdims=True)
-#         self._stdd = _sequence.std(axis=0, keepdims=True)
+class Map(collections.abc.Sequence):
+    def __init__(
+        self,
+        _sequence: NumpySequence | np.memmap | np.ndarray,
+        _func: Callable[[Any], Any],
+    ) -> None:
+        self._sequence = _sequence
+        self._func = _func
 
-#     def norm(self, x: np.ndarray) -> np.ndarray:
-#         return (x - self._mean) / self._stdd
+    def __getitem__(self, index: int | slice | np.ndarray) -> Any:
+        if isinstance(index, int):
+            if index < 0:
+                index += len(self)
 
-#     def unnorm(self, x: np.ndarray) -> np.ndarray:
-#         return x * self._stdd + self._mean
+            if index < 0 or index >= len(self):
+                raise IndexError(f"Index {index} out of bounds.")
 
-#     def __getitem__(self, index: int | slice | np.ndarray) -> np.ndarray:
-#         return self.norm(self._sequence[index])
+            return self._func(self._sequence[index])
 
-#     def __len__(self) -> int:
-#         return len(self._sequence)
+        if isinstance(index, slice):
+            return Sliced(self, index)
 
-#     def unwrap(self) -> np.ndarray | np.memmap:
-#         return self.norm(self._sequence)
+        if isinstance(index, np.ndarray):
+            index[index < 0] += len(self)
+
+            if any(index < 0) or any(index >= len(self)):
+                raise IndexError(f"Index {index} out of bounds.")
+
+            return self._func(self._sequence[index])
+
+        raise TypeError(f"Invalid index type: {type(index)}")
+
+    def __len__(self) -> int:
+        return len(self._sequence)
+
+    def _unwrap(self) -> NumpySequence | np.memmap | np.ndarray:
+        index = np.arange(len(self))
+        return self[index]

@@ -1,12 +1,12 @@
 from ._labels import hash_64bit
 from ._loader import (
     Batched,
-    FastShuffled,
-    SequenceDict,
+    Shuffled,
+    Dict,
     Sliced,
-    Subindexed,
+    Indexed,
     split,
-    unwrap_recursively,
+    unwrap,
 )
 from ._subset import compute_cut_batched
 from ._vector import WriteVector, WriteVectorDict, read_vector
@@ -14,12 +14,12 @@ from ._vector import WriteVector, WriteVectorDict, read_vector
 __all__ = [
     "hash_64bit",
     "Batched",
-    "FastShuffled",
-    "SequenceDict",
+    "Shuffled",
+    "Dict",
     "Sliced",
-    "Subindexed",
+    "Indexed",
     "split",
-    "unwrap_recursively",
+    "unwrap",
     "compute_cut_batched",
     "WriteVector",
     "WriteVectorDict",

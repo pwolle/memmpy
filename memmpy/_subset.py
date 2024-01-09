@@ -86,12 +86,12 @@ def compute_cut_batched(
     print(f"Computing cut: {expression}.")
     with _vector.WriteVector(path=path, name=expression, check=hashed) as writer:
         batch_loader = _loader.Batched(
-            _loader.SequenceDict(_vector.read_vectors(path, keys)),  # type: ignore
+            _loader.Dict(_vector.read_vectors(path, keys)),  # type: ignore
             batch_size,
         )
 
         for i, batch in enumerate(tqdm.tqdm(batch_loader)):
-            batch = _loader.unwrap_recursively(batch)
+            batch = _loader.unwrap(batch)
             result = eval(expression, batch | constants, {})
 
             index = np.arange(len(result)) + i * batch_size
