@@ -165,18 +165,21 @@ class WriteVector:
             raise ValueError(error)
 
         length = self._index + value.shape[0]
-        length = 2 ** math.ceil(math.log2(length))
 
-        self._file = tempfile.NamedTemporaryFile()
-        mmap = np.memmap(
-            self._file,
-            self.dtype,
-            "w+",
-            shape=(length, *self._mmap.shape[1:]),
-        )
+        if length > self._mmap.shape[0]:
+            length = 2 ** math.ceil(math.log2(length))
+            print(f"Resizing to {length}.")
 
-        mmap[: self._index] = self._mmap[: self._index]
-        self._mmap = mmap
+            self._file = tempfile.NamedTemporaryFile()
+            mmap = np.memmap(
+                self._file,
+                self.dtype,
+                "w+",
+                shape=(length, *self._mmap.shape[1:]),
+            )
+
+            mmap[: self._index] = self._mmap[: self._index]
+            self._mmap = mmap
 
         self._mmap[self._index : self._index + value.shape[0]] = value
         self._mmap.flush()
