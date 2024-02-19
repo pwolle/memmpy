@@ -37,25 +37,19 @@ class NumpySequence(Protocol):
     """
 
     @overload
-    def __getitem__(self: Self, index: int) -> Any:
-        ...
+    def __getitem__(self: Self, index: int) -> Any: ...
 
     @overload
-    def __getitem__(self: Self, index: slice) -> "NumpySequence":
-        ...
+    def __getitem__(self: Self, index: slice) -> "NumpySequence": ...
 
     @overload
-    def __getitem__(self: Self, index: np.ndarray) -> "NumpySequence":
-        ...
+    def __getitem__(self: Self, index: np.ndarray) -> "NumpySequence": ...
 
-    def __getitem__(self: Self, index: int | slice | np.ndarray) -> Any:
-        ...
+    def __getitem__(self: Self, index: int | slice | np.ndarray) -> Any: ...
 
-    def __iter__(self: Self) -> Iterator:
-        ...
+    def __iter__(self: Self) -> Iterator: ...
 
-    def __len__(self: Self) -> int:
-        ...
+    def __len__(self: Self) -> int: ...
 
 
 def unwrap(x):
@@ -89,16 +83,13 @@ class Dict(collections.abc.Sequence):
         self._length = len(next(iter(_sequences.values())))
 
     @overload
-    def __getitem__(self: Self, index: int) -> dict[Hashable, Any]:
-        ...
+    def __getitem__(self: Self, index: int) -> dict[Hashable, Any]: ...
 
     @overload
-    def __getitem__(self: Self, index: slice) -> "NumpySequence":
-        ...
+    def __getitem__(self: Self, index: slice) -> "NumpySequence": ...
 
     @overload
-    def __getitem__(self: Self, index: np.ndarray) -> "NumpySequence":
-        ...
+    def __getitem__(self: Self, index: np.ndarray) -> "NumpySequence": ...
 
     def __getitem__(
         self: Self,
@@ -226,7 +217,7 @@ class _Indexed(collections.abc.Sequence):
         # might be used, so the wait might be much longer than the actual
         # time this index would be used for
         self._sequence = _sequence
-        self._subindex = _subindex.astype(np.intp)
+        self._subindex = _subindex
 
     def __getitem__(self, index: int | slice | np.ndarray) -> Any:
         if isinstance(index, int):
@@ -236,7 +227,6 @@ class _Indexed(collections.abc.Sequence):
             return Indexed(self._sequence, self._subindex[index])
 
         if isinstance(index, np.ndarray):
-            # print(index)
             return self._sequence[self._subindex[index]]
 
         raise TypeError(f"Invalid index type: {type(index)}")
@@ -245,7 +235,6 @@ class _Indexed(collections.abc.Sequence):
         return len(self._subindex)
 
     def _unwrap(self: Self) -> NumpySequence | np.memmap | np.ndarray:
-        print(self._sequence)
         return self._sequence[self._subindex]
 
 
@@ -257,7 +246,7 @@ def Indexed(
     Restrict a sequence to a subset of indicies. If it is a numpy array, the
     indexing is done directly, otherwise a lazy wrapper is returned.
     """
-    if isinstance(x, (np.ndarray, np.memmap)):
+    if isinstance(x, np.ndarray):
         return x[i]
 
     return _Indexed(x, i)

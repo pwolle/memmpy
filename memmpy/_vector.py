@@ -168,7 +168,6 @@ class WriteVector:
 
         if length > self._mmap.shape[0]:
             length = 2 ** math.ceil(math.log2(length))
-            print(f"Resizing to {length}.")
 
             self._file = tempfile.NamedTemporaryFile()
             mmap = np.memmap(
