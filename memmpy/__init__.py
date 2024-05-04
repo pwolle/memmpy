@@ -1,31 +1,20 @@
-from ._labels import hash_64bit, safe_load
-from ._loader import (
-    Batched,
-    Dict,
-    Indexed,
-    Shuffled,
-    Sliced,
-    split,
-    unwrap,
-)
-from ._subset import compute_cut_batched
-from ._vector import WriteVector, WriteVectorDict, read_vector, read_vectors
+from ._vector import Vector
+from ._shuffle import shuffle_fast, shuffle_blocks, shuffle_bands
+from ._index import batch_slices, batch_indicies, batch_indicies_split
+
+__version__ = "0.1.10"
 
 __all__ = [
-    "hash_64bit",
-    "safe_load",
-    "Batched",
-    "Shuffled",
-    "Dict",
-    "Indexed",
-    "Sliced",
-    "split",
-    "unwrap",
-    "compute_cut_batched",
-    "WriteVector",
-    "WriteVectorDict",
-    "read_vector",
-    "read_vectors",
+    "__version__",
+    "Vector",
+    "shuffle_fast",
+    "shuffle_blocks",
+    "shuffle_bands",
+    "batch_slices",
+    "batch_indicies",
+    "batch_indicies_split",
 ]
 
-__version__ = "0.1.9"
+from beartype.claw import beartype_this_package
+
+beartype_this_package()
