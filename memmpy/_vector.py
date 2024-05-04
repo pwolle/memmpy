@@ -13,8 +13,9 @@ __all__ = ["Vector"]
 class Vector:
     _mmap: None | np.memmap
 
-    def __init__(self: Self) -> None:
+    def __init__(self: Self, dir: str | None = ".") -> None:
         self._mmap = None
+        self._dir = dir
         self._len = 0
 
     @property
@@ -29,7 +30,7 @@ class Vector:
         return self._len if self._mmap is not None else 0
 
     def _init_mmap(self: Self, shape: tuple[int, ...], dtype: DTypeLike) -> None:
-        self.file = tempfile.NamedTemporaryFile(dir=".")
+        self.file = tempfile.NamedTemporaryFile(dir=self._dir)
         self._mmap = np.memmap(
             self.file,
             dtype,
@@ -55,7 +56,7 @@ class Vector:
         length = 2 ** math.ceil(math.log2(length))
 
         if length > self._mmap.shape[0]:
-            file = tempfile.NamedTemporaryFile(dir=".")
+            file = tempfile.NamedTemporaryFile(dir=self._dir)
             mmap = np.memmap(
                 file,
                 self._mmap.dtype,
