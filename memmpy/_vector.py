@@ -22,6 +22,7 @@ class Vector:
         if self._mmap is None:
             return np.empty((0, 0), dtype=np.float32)
 
+        self._mmap.flush()
         return self._mmap[: self._len]
 
     def __len__(self: Self) -> int:
@@ -70,8 +71,6 @@ class Vector:
 
         self._mmap[self._len : self._len + value.shape[0]] = value
         self._len += value.shape[0]
-
-        self._mmap.flush()
 
     def append(self: Self, value: np.ndarray) -> None:
         self.extend(value[np.newaxis])
