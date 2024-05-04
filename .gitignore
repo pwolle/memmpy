@@ -160,6 +160,4 @@ cython_debug/
 #.idea/
 
 # custom
-*.npy
-*.json
-test.py
+test*.py
